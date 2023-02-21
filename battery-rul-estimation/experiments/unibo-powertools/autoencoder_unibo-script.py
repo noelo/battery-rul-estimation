@@ -13,6 +13,7 @@ import logging
 import time
 import sys
 import random
+import boto3
 
 from importlib import reload
 import plotly.graph_objects as go
@@ -35,7 +36,7 @@ IS_OFFLINE = True
 
 if IS_OFFLINE:
     import plotly.offline as pyo
-    pyo.init_notebook_mode()
+    pyo.init_notebook_mode()   
 
 data_path = "../../"
 
