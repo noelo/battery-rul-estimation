@@ -40,7 +40,11 @@ if IS_OFFLINE:
 
 data_path = "../../"
 
+reload(logging)
+logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')
+
 sys.path.append(data_path)
+print(sys.path)
 from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
 from data_processing.model_data_handler import ModelDataHandler
 from data_processing.prepare_rul_data import RulHandler
@@ -49,8 +53,7 @@ from data_processing.prepare_rul_data import RulHandler
 # ### Config logging
 
 # %%
-reload(logging)
-logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')
+
 
 # %% [markdown]
 # # Load Data
