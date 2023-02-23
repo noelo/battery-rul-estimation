@@ -4,7 +4,6 @@ import os
 import ntpath
 import sys
 import logging
-import sys
 
 from importlib import reload
 
@@ -19,7 +18,13 @@ from kubernetes.client import V1Volume, V1SecretVolumeSource, V1VolumeMount, V1E
 def loadFilesTest(infiles: str, datafiles: OutputPath()):
     import boto3
     import os
+    import sys
+    import logging
+    from importlib import reload
     
+    reload(logging)
+    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
+        
     clientArgs = {
         'aws_access_key_id': 'minio',
         'aws_secret_access_key': 'minio123',
@@ -52,14 +57,41 @@ def loadFilesTest(infiles: str, datafiles: OutputPath()):
         basepath = '/mnt'
         with os.scandir(basepath) as entries:
             for entry in entries:
-                print(entry.name)        
-
+                print(entry.name)                     
+                
     except ClientError as err:
         print("Error: {}".format(err))
+        
+    IS_TRAINING = False
+    RESULT_NAME = ""
+    IS_OFFLINE = True
+
+    # if IS_OFFLINE:
+    #     import plotly.offline as pyo
+    #     pyo.init_notebook_mode()   
+
+
+    from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
+    from data_processing.model_data_handler import ModelDataHandler
+    from data_processing.prepare_rul_data import RulHandler
+    
+    data_path = "/mnt/"    
+    sys.path.append(data_path)
+    print(sys.path)
+    
+    dataset = UniboPowertoolsData(
+        test_types=[],
+        chunk_size=1000000,
+        lines=[37, 40],
+        charge_line=37,
+        discharge_line=40,
+        base_path=data_path
+    )
+    
     
     
 loadFilesTest_op = components.create_component_from_func(
-    loadFilesTest, base_image='registry.redhat.io/rhel8/python-38:1-117',
+    loadFilesTest, base_image='quay.io/noeloc/batterybase',
     packages_to_install=['boto3'])
     
     
