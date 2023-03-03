@@ -15,11 +15,12 @@ from kfp.components import func_to_container_op
 from kubernetes.client import V1Volume, V1SecretVolumeSource, V1VolumeMount, V1EnvVar, V1PersistentVolumeClaimVolumeSource
 
 # Download files to workspace
-def loadFilesTest(infiles: str, datafiles: OutputPath()):
+def loadFilesTest(infiles: str, datafiles: OutputPath(),preppedData: OutputPath()):
     import boto3
     import os
     import sys
     import logging
+    import pickle
     from importlib import reload
     
     reload(logging)
@@ -87,6 +88,9 @@ def loadFilesTest(infiles: str, datafiles: OutputPath()):
         discharge_line=40,
         base_path=data_path
     )
+    
+    with open(preppedData, "b+w") as f:   
+        pickle.dump(dataset,f)
     
     
     
