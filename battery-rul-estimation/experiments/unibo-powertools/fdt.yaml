@@ -1,0 +1,112 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: loadfilestest
+  annotations:
+    tekton.dev/output_artifacts: '{"loadfilestest": [{"key": "artifacts/$PIPELINERUN/loadfilestest/datafiles.tgz",
+      "name": "loadfilestest-datafiles", "path": "/tmp/outputs/datafiles/data"}, {"key":
+      "artifacts/$PIPELINERUN/loadfilestest/preppedData.tgz", "name": "loadfilestest-preppedData",
+      "path": "/tmp/outputs/preppedData/data"}]}'
+    tekton.dev/input_artifacts: '{}'
+    tekton.dev/artifact_bucket: mlpipeline
+    tekton.dev/artifact_endpoint: minio-service.kubeflow:9000
+    tekton.dev/artifact_endpoint_scheme: http://
+    tekton.dev/artifact_items: '{"loadfilestest": [["datafiles", "$(results.datafiles.path)"],
+      ["preppedData", "$(results.preppedData.path)"]]}'
+    sidecar.istio.io/inject: "false"
+    tekton.dev/template: ''
+    pipelines.kubeflow.org/big_data_passing_format: $(workspaces.$TASK_NAME.path)/artifacts/$ORIG_PR_NAME/$TASKRUN_NAME/$TASK_PARAM_NAME
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "Download files from minio
+      and store", "name": "loadFilesTest"}'
+  labels:
+    pipelines.kubeflow.org/pipelinename: ''
+    pipelines.kubeflow.org/generation: ''
+spec:
+  pipelineSpec:
+    tasks:
+    - name: loadfilestest
+      taskSpec:
+        steps:
+        - name: main
+          args:
+          - --infiles
+          - unibo-powertools-dataset
+          - --datafiles
+          - $(results.datafiles.path)
+          - --preppedData
+          - $(results.preppedData.path)
+          command:
+          - sh
+          - -c
+          - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+            'boto3' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+            --no-warn-script-location 'boto3' --user) && "$0" "$@"
+          - sh
+          - -ec
+          - |
+            program_path=$(mktemp)
+            printf "%s" "$0" > "$program_path"
+            python3 -u "$program_path" "$@"
+          - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n\
+            \    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return\
+            \ file_path\n\ndef loadFilesTest(infiles, datafiles,preppedData):\n  \
+            \  import boto3\n    import os\n    import sys\n    import logging\n \
+            \   import pickle\n    from importlib import reload\n\n    # reload(logging)\n\
+            \    # logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',\
+            \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    clientArgs\
+            \ = {\n        'aws_access_key_id': 'minio',\n        'aws_secret_access_key':\
+            \ 'minio123',\n        'endpoint_url': 'http://minio-api.minio-dev.svc.cluster.local:9000',\n\
+            \        'verify': False\n    }\n\n    client = boto3.resource(\"s3\"\
+            , **clientArgs)\n\n    try:\n        print('Retrieving buckets...')\n\
+            \        print()\n\n        for bucket in client.buckets.all():\n    \
+            \        bucket_name = bucket.name\n            print('Bucket name: {}'.format(bucket_name))\n\
+            \n            objects = client.Bucket(bucket_name).objects.all()\n\n \
+            \           for obj in objects:\n                object_name = obj.key\n\
+            \n                print('Object name: {}'.format(object_name))\n\n   \
+            \         print()\n\n        print(\"Starting downloading file\")\n  \
+            \      client.Bucket('battery-data').download_file( 'unibo-powertools-dataset/README.md',\
+            \ datafiles)\n        print(\"Starting downloading file....done\")\n \
+            \       basepath = '/mnt'\n        with os.scandir(basepath) as entries:\n\
+            \            for entry in entries:\n                print(entry.name)\
+            \                     \n\n    except ClientError as err:\n        print(\"\
+            Error: {}\".format(err))\n\n    IS_TRAINING = False\n    RESULT_NAME =\
+            \ \"\"\n    IS_OFFLINE = True\n\n    # if IS_OFFLINE:\n    #     import\
+            \ plotly.offline as pyo\n    #     pyo.init_notebook_mode()   \n\n   \
+            \ from data_processing.unibo_powertools_data import UniboPowertoolsData,\
+            \ CycleCols\n    from data_processing.model_data_handler import ModelDataHandler\n\
+            \    from data_processing.prepare_rul_data import RulHandler\n\n    data_path\
+            \ = \"/mnt/\"    \n    sys.path.append(data_path)\n    print(sys.path)\n\
+            \n    dataset = UniboPowertoolsData(\n        test_types=[],\n       \
+            \ chunk_size=1000000,\n        lines=[37, 40],\n        charge_line=37,\n\
+            \        discharge_line=40,\n        base_path=data_path\n    )\n\n  \
+            \  with open(preppedData, \"b+w\") as f:   \n        pickle.dump(dataset,f)\n\
+            \n    return \"test\"\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='LoadFilesTest',\
+            \ description='')\n_parser.add_argument(\"--infiles\", dest=\"infiles\"\
+            , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+            --datafiles\", dest=\"datafiles\", type=_make_parent_dirs_and_return_path,\
+            \ required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--preppedData\"\
+            , dest=\"preppedData\", type=_make_parent_dirs_and_return_path, required=True,\
+            \ default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
+            \n_outputs = loadFilesTest(**_parsed_args)\n"
+          image: quay.io/noeloc/batterybase
+          volumeMounts:
+          - mountPath: /mnt
+            name: batterydatavol
+        results:
+        - name: datafiles
+          type: string
+          description: /tmp/outputs/datafiles/data
+        - name: preppedData
+          type: string
+          description: /tmp/outputs/preppedData/data
+        volumes:
+        - name: batterydatavol
+          persistentVolumeClaim:
+            claimName: batterydata
+        metadata:
+          labels:
+            pipelines.kubeflow.org/cache_enabled: "true"
+          annotations:
+            pipelines.kubeflow.org/component_spec_digest: '{"name": "LoadFilesTest",
+              "outputs": [{"name": "datafiles"}, {"name": "preppedData"}], "version":
+              "LoadFilesTest@sha256=d60f24e507904e3c59118ae8b5cdc93bfcc076dff9c9373b81bed03e631f40be"}'

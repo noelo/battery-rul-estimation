@@ -23,8 +23,8 @@ def loadFilesTest(infiles: str, datafiles: OutputPath(),preppedData: OutputPath(
     import pickle
     from importlib import reload
     
-    reload(logging)
-    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
+    # reload(logging)
+    # logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
         
     clientArgs = {
         'aws_access_key_id': 'minio',
@@ -91,6 +91,8 @@ def loadFilesTest(infiles: str, datafiles: OutputPath(),preppedData: OutputPath(
     
     with open(preppedData, "b+w") as f:   
         pickle.dump(dataset,f)
+        
+    return "test"
     
     
     
