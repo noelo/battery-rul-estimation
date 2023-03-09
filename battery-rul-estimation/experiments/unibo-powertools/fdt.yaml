@@ -3,16 +3,17 @@ kind: PipelineRun
 metadata:
   name: loadfilestest
   annotations:
-    tekton.dev/output_artifacts: '{"loadfilestest": [{"key": "artifacts/$PIPELINERUN/loadfilestest/datafiles.tgz",
-      "name": "loadfilestest-datafiles", "path": "/tmp/outputs/datafiles/data"}, {"key":
-      "artifacts/$PIPELINERUN/loadfilestest/preppedData.tgz", "name": "loadfilestest-preppedData",
+    tekton.dev/output_artifacts: '{"readfiles": [{"key": "artifacts/$PIPELINERUN/readfiles/p1.tgz",
+      "name": "readfiles-p1", "path": "/tmp/outputs/p1/data"}], "writefiles": [{"key":
+      "artifacts/$PIPELINERUN/writefiles/preppedData.tgz", "name": "writefiles-preppedData",
       "path": "/tmp/outputs/preppedData/data"}]}'
-    tekton.dev/input_artifacts: '{}'
+    tekton.dev/input_artifacts: '{"readfiles": [{"name": "writefiles-preppedData",
+      "parent_task": "writefiles"}]}'
     tekton.dev/artifact_bucket: mlpipeline
     tekton.dev/artifact_endpoint: minio-service.kubeflow:9000
     tekton.dev/artifact_endpoint_scheme: http://
-    tekton.dev/artifact_items: '{"loadfilestest": [["datafiles", "$(results.datafiles.path)"],
-      ["preppedData", "$(results.preppedData.path)"]]}'
+    tekton.dev/artifact_items: '{"readfiles": [["p1", "$(results.p1.path)"]], "writefiles":
+      [["preppedData", "$(workspaces.writefiles.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/preppedData"]]}'
     sidecar.istio.io/inject: "false"
     tekton.dev/template: ''
     pipelines.kubeflow.org/big_data_passing_format: $(workspaces.$TASK_NAME.path)/artifacts/$ORIG_PR_NAME/$TASKRUN_NAME/$TASK_PARAM_NAME
@@ -24,17 +25,13 @@ metadata:
 spec:
   pipelineSpec:
     tasks:
-    - name: loadfilestest
+    - name: writefiles
       taskSpec:
         steps:
         - name: main
           args:
-          - --infiles
-          - unibo-powertools-dataset
-          - --datafiles
-          - $(results.datafiles.path)
           - --preppedData
-          - $(results.preppedData.path)
+          - $(workspaces.writefiles.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/preppedData
           command:
           - sh
           - -c
@@ -49,64 +46,184 @@ spec:
             python3 -u "$program_path" "$@"
           - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n\
             \    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return\
-            \ file_path\n\ndef loadFilesTest(infiles, datafiles,preppedData):\n  \
-            \  import boto3\n    import os\n    import sys\n    import logging\n \
-            \   import pickle\n    from importlib import reload\n\n    # reload(logging)\n\
-            \    # logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',\
-            \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    clientArgs\
-            \ = {\n        'aws_access_key_id': 'minio',\n        'aws_secret_access_key':\
-            \ 'minio123',\n        'endpoint_url': 'http://minio-api.minio-dev.svc.cluster.local:9000',\n\
-            \        'verify': False\n    }\n\n    client = boto3.resource(\"s3\"\
-            , **clientArgs)\n\n    try:\n        print('Retrieving buckets...')\n\
-            \        print()\n\n        for bucket in client.buckets.all():\n    \
-            \        bucket_name = bucket.name\n            print('Bucket name: {}'.format(bucket_name))\n\
+            \ file_path\n\ndef writeFiles(preppedData):\n    import boto3\n    import\
+            \ os\n    import sys\n    import logging\n    import pickle\n    from\
+            \ importlib import reload\n    import shutil\n\n# export DEFAULT_ACCESSMODES=ReadWriteOnce\n\
+            # export DEFAULT_STORAGE_SIZE=2Gi\n# export DEFAULT_STORAGE_CLASS=kfp-csi-s3\n\
+            \n    # reload(logging)\n    # logging.basicConfig(format='%(asctime)s\
+            \ [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d\
+            \ %H:%M:%S')    \n\n    clientArgs = {\n        'aws_access_key_id': 'minio',\n\
+            \        'aws_secret_access_key': 'minio123',\n        'endpoint_url':\
+            \ 'http://minio-api.minio-dev.svc.cluster.local:9000',\n        'verify':\
+            \ False\n    }\n\n    client = boto3.resource(\"s3\", **clientArgs)\n\n\
+            \    try:\n        print('Retrieving buckets...')\n        print()\n\n\
+            \        for bucket in client.buckets.all():\n            bucket_name\
+            \ = bucket.name\n            print('Bucket name: {}'.format(bucket_name))\n\
             \n            objects = client.Bucket(bucket_name).objects.all()\n\n \
             \           for obj in objects:\n                object_name = obj.key\n\
             \n                print('Object name: {}'.format(object_name))\n\n   \
             \         print()\n\n        print(\"Starting downloading file\")\n  \
-            \      client.Bucket('battery-data').download_file( 'unibo-powertools-dataset/README.md',\
+            \      # client.Bucket('battery-data').download_file( 'unibo-powertools-dataset/README.md',\
             \ datafiles)\n        print(\"Starting downloading file....done\")\n \
             \       basepath = '/mnt'\n        with os.scandir(basepath) as entries:\n\
             \            for entry in entries:\n                print(entry.name)\
             \                     \n\n    except ClientError as err:\n        print(\"\
-            Error: {}\".format(err))\n\n    IS_TRAINING = False\n    RESULT_NAME =\
-            \ \"\"\n    IS_OFFLINE = True\n\n    # if IS_OFFLINE:\n    #     import\
-            \ plotly.offline as pyo\n    #     pyo.init_notebook_mode()   \n\n   \
-            \ from data_processing.unibo_powertools_data import UniboPowertoolsData,\
-            \ CycleCols\n    from data_processing.model_data_handler import ModelDataHandler\n\
-            \    from data_processing.prepare_rul_data import RulHandler\n\n    data_path\
-            \ = \"/mnt/\"    \n    sys.path.append(data_path)\n    print(sys.path)\n\
-            \n    dataset = UniboPowertoolsData(\n        test_types=[],\n       \
-            \ chunk_size=1000000,\n        lines=[37, 40],\n        charge_line=37,\n\
-            \        discharge_line=40,\n        base_path=data_path\n    )\n\n  \
-            \  with open(preppedData, \"b+w\") as f:   \n        pickle.dump(dataset,f)\n\
-            \n    return \"test\"\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='LoadFilesTest',\
-            \ description='')\n_parser.add_argument(\"--infiles\", dest=\"infiles\"\
-            , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
-            --datafiles\", dest=\"datafiles\", type=_make_parent_dirs_and_return_path,\
-            \ required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--preppedData\"\
-            , dest=\"preppedData\", type=_make_parent_dirs_and_return_path, required=True,\
-            \ default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
-            \n_outputs = loadFilesTest(**_parsed_args)\n"
-          image: quay.io/noeloc/batterybase
+            Error: {}\".format(err))\n\n    # IS_TRAINING = False\n    # RESULT_NAME\
+            \ = \"\"\n    # IS_OFFLINE = True\n\n    # # if IS_OFFLINE:\n    # # \
+            \    import plotly.offline as pyo\n    # #     pyo.init_notebook_mode()\
+            \   \n\n    # from data_processing.unibo_powertools_data import UniboPowertoolsData,\
+            \ CycleCols\n    # from data_processing.model_data_handler import ModelDataHandler\n\
+            \    # from data_processing.prepare_rul_data import RulHandler\n\n   \
+            \ # data_path = \"/mnt/\"    \n    # sys.path.append(data_path)\n    #\
+            \ print(sys.path)\n\n    # dataset = UniboPowertoolsData(\n    #     test_types=[],\n\
+            \    #     chunk_size=1000000,\n    #     lines=[37, 40],\n    #     charge_line=37,\n\
+            \    #     discharge_line=40,\n    #     base_path=data_path\n    # )\n\
+            \n    # with open(preppedData, \"b+w\") as f:   \n    #     pickle.dump(dataset,f)\n\
+            \n    # shutil.copyfile(\"/mnt/large_bin_file.dat\",preppedData)\n   \
+            \ ba = bytearray(os.urandom(1_000_000))\n\n    with open(preppedData,\
+            \ \"b+w\") as f:   \n        f.write(ba)\n\n    print('Files written...')\n\
+            \nimport argparse\n_parser = argparse.ArgumentParser(prog='WriteFiles',\
+            \ description='')\n_parser.add_argument(\"--preppedData\", dest=\"preppedData\"\
+            , type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n\
+            _parsed_args = vars(_parser.parse_args())\n\n_outputs = writeFiles(**_parsed_args)\n"
+          image: registry.access.redhat.com/ubi8/python-38
           volumeMounts:
           - mountPath: /mnt
             name: batterydatavol
+          env:
+          - name: ORIG_PR_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
+        - image: busybox
+          name: output-taskrun-name
+          command:
+          - sh
+          - -ec
+          - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
+        - image: busybox
+          name: copy-results-artifacts
+          command:
+          - sh
+          - -ec
+          - |
+            set -exo pipefail
+            TOTAL_SIZE=0
+            copy_artifact() {
+            if [ -d "$1" ]; then
+              tar -czvf "$1".tar.gz "$1"
+              SUFFIX=".tar.gz"
+            fi
+            ARTIFACT_SIZE=`wc -c "$1"${SUFFIX} | awk '{print $1}'`
+            TOTAL_SIZE=$( expr $TOTAL_SIZE + $ARTIFACT_SIZE)
+            touch "$2"
+            if [[ $TOTAL_SIZE -lt 3072 ]]; then
+              if [ -d "$1" ]; then
+                tar -tzf "$1".tar.gz > "$2"
+              elif ! awk "/[^[:print:]]/{f=1} END{exit !f}" "$1"; then
+                cp "$1" "$2"
+              fi
+            fi
+            }
+            copy_artifact $(workspaces.writefiles.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/preppedData $(results.preppedData.path)
+          onError: continue
+          env:
+          - name: ORIG_PR_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
         results:
-        - name: datafiles
-          type: string
-          description: /tmp/outputs/datafiles/data
         - name: preppedData
           type: string
           description: /tmp/outputs/preppedData/data
+        - name: taskrun-name
+          type: string
         volumes:
         - name: batterydatavol
           persistentVolumeClaim:
             claimName: batterydata
         metadata:
           labels:
-            pipelines.kubeflow.org/cache_enabled: "true"
+            pipelines.kubeflow.org/cache_enabled: "false"
           annotations:
-            pipelines.kubeflow.org/component_spec_digest: '{"name": "LoadFilesTest",
-              "outputs": [{"name": "datafiles"}, {"name": "preppedData"}], "version":
-              "LoadFilesTest@sha256=d60f24e507904e3c59118ae8b5cdc93bfcc076dff9c9373b81bed03e631f40be"}'
+            pipelines.kubeflow.org/component_spec_digest: '{"name": "WriteFiles",
+              "outputs": [{"name": "preppedData"}], "version": "WriteFiles@sha256=e25baa90d059ae74708254374c907fe2123a9ed119bf61da116559c650f430f8"}'
+        workspaces:
+        - name: writefiles
+      workspaces:
+      - name: writefiles
+        workspace: loadfilestest
+    - name: readfiles
+      params:
+      - name: writefiles-trname
+        value: $(tasks.writefiles.results.taskrun-name)
+      taskSpec:
+        steps:
+        - name: main
+          args:
+          - --infiles
+          - $(workspaces.readfiles.path)/artifacts/$ORIG_PR_NAME/$(params.writefiles-trname)/preppedData
+          - '----output-paths'
+          - $(results.p1.path)
+          command:
+          - sh
+          - -ec
+          - |
+            program_path=$(mktemp)
+            printf "%s" "$0" > "$program_path"
+            python3 -u "$program_path" "$@"
+          - "def readFiles(infiles):\n    import os  \n    import shutil\n    file_stats\
+            \ = os.stat(infiles)\n    print(file_stats)\n    print(f'File Size in\
+            \ Bytes is {file_stats.st_size}')\n    print(f'File Size in MegaBytes\
+            \ is {file_stats.st_size / (1024 * 1024)}')\n    from collections import\
+            \ namedtuple\n    task_output = namedtuple('taskOutput', ['p1'])\n   \
+            \ return task_output(\"1\")\n\ndef _serialize_str(str_value: str) -> str:\n\
+            \    if not isinstance(str_value, str):\n        raise TypeError('Value\
+            \ \"{}\" has type \"{}\" instead of str.'.format(\n            str(str_value),\
+            \ str(type(str_value))))\n    return str_value\n\nimport argparse\n_parser\
+            \ = argparse.ArgumentParser(prog='ReadFiles', description='')\n_parser.add_argument(\"\
+            --infiles\", dest=\"infiles\", type=str, required=True, default=argparse.SUPPRESS)\n\
+            _parser.add_argument(\"----output-paths\", dest=\"_output_paths\", type=str,\
+            \ nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files =\
+            \ _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = readFiles(**_parsed_args)\n\
+            \n_output_serializers = [\n    _serialize_str,\n\n]\n\nimport os\nfor\
+            \ idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n\
+            \    except OSError:\n        pass\n    with open(output_file, 'w') as\
+            \ f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"
+          image: registry.access.redhat.com/ubi8/python-38
+          env:
+          - name: ORIG_PR_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
+        params:
+        - name: writefiles-trname
+        results:
+        - name: p1
+          type: string
+          description: /tmp/outputs/p1/data
+        metadata:
+          labels:
+            pipelines.kubeflow.org/cache_enabled: "false"
+          annotations:
+            pipelines.kubeflow.org/component_spec_digest: '{"name": "ReadFiles", "outputs":
+              [{"name": "p1", "type": "String"}], "version": "ReadFiles@sha256=400b49a95ecf1f133ac40480321d202fb960fa3c8fb0d1bc5c5a901b4078bf7b"}'
+        workspaces:
+        - name: readfiles
+      workspaces:
+      - name: readfiles
+        workspace: loadfilestest
+      runAfter:
+      - writefiles
+    workspaces:
+    - name: loadfilestest
+  workspaces:
+  - name: loadfilestest
+    volumeClaimTemplate:
+      spec:
+        storageClassName: odf-lvm-vg1
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
