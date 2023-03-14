@@ -1,6 +1,6 @@
 from kfp import dsl, components
 from kfp.dsl import data_passing_methods
-from kfp.components import InputPath, InputTextFile, OutputPath, OutputTextFile
+from kfp.components import InputPath, OutputPath, OutputArtifact
 from kfp.components import func_to_container_op
 from kubernetes.client import V1Volume, V1SecretVolumeSource, V1VolumeMount, V1EnvVar, V1PersistentVolumeClaimVolumeSource
 from typing import NamedTuple
@@ -23,8 +23,8 @@ def readyData(preppedData: OutputPath()):
     logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
 
     from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
-    from data_processing.model_data_handler import ModelDataHandler
-    from data_processing.prepare_rul_data import RulHandler
+    # from data_processing.model_data_handler import ModelDataHandler
+    # from data_processing.prepare_rul_data import RulHandler
     
     data_path = "/mnt/"    
     sys.path.append(data_path)
@@ -44,13 +44,9 @@ def readyData(preppedData: OutputPath()):
     print('PrepData written...')
     
 def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
-    import boto3
-    import os
-    import sys
     import logging
     import pickle
     from importlib import reload
-    import shutil
     reload(logging)
     logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
 
@@ -97,7 +93,7 @@ def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
         '041-DM-4.00-2320-S',#minimum capacity 3.76, cycles 190
     ]
 
-    # %%
+
     dataset.prepare_data(train_names, test_names)
     dataset_handler = ModelDataHandler(dataset, [
         CycleCols.VOLTAGE,
@@ -106,7 +102,7 @@ def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
     ])
 
     rul_handler = RulHandler()
-    # %%
+
     (train_x, train_y_soh, test_x, test_y_soh,
     train_battery_range, test_battery_range,
     time_train, time_test, current_train, current_test) = dataset_handler.get_discharge_whole_cycle_future(train_names, test_names)
@@ -123,20 +119,23 @@ def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
         pickle.dump(dataStore,f)    
     print('modelData written...')
     
-def autoEncodeData(modelData: InputPath()):
+def autoEncodeData(IS_TRAINING:bool, epochCount:int, modelData: InputPath(),weightsPath:OutputPath(),historyPath:OutputPath()):
     import tensorflow as tf
     from tensorflow import keras
-    from tensorflow.keras import layers, regularizers
-    from tensorflow.keras.models import Model
+    from keras import layers, regularizers
+    from keras.models import Model
     import logging
     import pickle
+    import time
     from importlib import reload
+    import pandas as pd
+    
     reload(logging)
     logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
 
-    from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
-    from data_processing.model_data_handler import ModelDataHandler
-    from data_processing.prepare_rul_data import RulHandler
+    # from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
+    # from data_processing.model_data_handler import ModelDataHandler
+    # from data_processing.prepare_rul_data import RulHandler
     
     f = open(modelData,"b+r")
     dataStore = pickle.load(f)
@@ -152,9 +151,85 @@ def autoEncodeData(modelData: InputPath()):
     current_train=dataStore[8]
     current_test=dataStore[9]  
     
-    # print("cut train shape {}".format(train_x.shape))
-    # print("cut test shape {}".format(test_x.shape))
-  
+    if IS_TRAINING:
+        EXPERIMENT = "autoencoder_unibo_powertools"
+
+        experiment_name = time.strftime("%Y-%m-%d-%H-%M-%S") + '_' + EXPERIMENT
+        print(experiment_name)
+
+    # Model definition
+
+    opt = tf.keras.optimizers.Adam(learning_rate=0.0002)
+    LATENT_DIM = 10
+
+    class Autoencoder(Model):
+        def __init__(self, latent_dim):
+            super(Autoencoder, self).__init__()
+            self.latent_dim = latent_dim
+            self.encoder = tf.keras.Sequential([
+                layers.Input(shape=(train_x.shape[1], train_x.shape[2])),
+                #layers.MaxPooling1D(5, padding='same'),
+                layers.Conv1D(filters=16, kernel_size=5, strides=2, activation='relu', padding='same'),
+                layers.Conv1D(filters=8, kernel_size=3, strides=2, activation='relu', padding='same'),
+                layers.Flatten(),
+                layers.Dense(self.latent_dim, activation='relu')
+            ])
+            self.decoder = tf.keras.Sequential([
+                layers.Input(shape=(self.latent_dim)),
+                layers.Dense(568, activation='relu'),
+                layers.Reshape((71, 8)),
+                layers.Conv1DTranspose(filters=8, kernel_size=3, strides=2, activation='relu', padding='same'),
+                layers.Conv1DTranspose(filters=16, kernel_size=5, strides=2, activation='relu', padding='same'),
+                layers.Conv1D(3, kernel_size=3, activation='relu', padding='same'),
+                #layers.UpSampling1D(5),
+            ])
+
+        def call(self, x):
+            encoded = self.encoder(x)
+            decoded = self.decoder(encoded)
+            return decoded
+
+    autoencoder = Autoencoder(LATENT_DIM)
+    autoencoder.compile(optimizer=opt, loss='mse', metrics=['mse', 'mae', 'mape', tf.keras.metrics.RootMeanSquaredError(name='rmse')])
+    autoencoder.encoder.summary()
+    autoencoder.decoder.summary()
+
+    if IS_TRAINING:
+        history = autoencoder.fit(train_x, train_x,
+                                    epochs=epochCount, 
+                                    batch_size=32, 
+                                    verbose=1,
+                                    validation_split=0.1
+                                )
+        
+        print("history",history)
+        model_json = autoencoder.to_json()
+        with open("weightsPath", "w") as json_file:
+            json_file.write(model_json)
+            
+        # serialize weights to HDF5
+        # model.save_weights("model.h5")
+        print("Saved model to disk")
+        # autoencoder.save_weights(data_path + 'results/trained_model/%s/model' % experiment_name)
+        autoencoder.save_weights(weightsPath+"/model")
+
+        hist_df = pd.DataFrame(history.history)
+        print("hist_df",hist_df)
+        # hist_csv_file = data_path + 'results/trained_model/%s/history.csv' % experiment_name
+        with open(historyPath, mode='b+w') as f:
+            hist_df.to_csv(f)
+        history = history.history
+        print("saving weights and history...done",history)
+        
+        
+def readFiles(weights: InputPath(),history:InputPath()):
+    import os  
+    for x in [weights,history]:
+        file_stats = os.stat(x)
+        print(file_stats)
+        print(f'File Size in Bytes is {file_stats.st_size}')
+        print(f'File Size in MegaBytes is {file_stats.st_size / (1024 * 1024)}')
+
     
     
 readyData_op= components.create_component_from_func(
@@ -162,34 +237,19 @@ readyData_op= components.create_component_from_func(
     packages_to_install=['boto3'])
 
 fitNormaliseData_op= components.create_component_from_func(
-    fitNormaliseData, base_image='quay.io/noeloc/batterybase',
-    packages_to_install=['boto3'])
+    fitNormaliseData, base_image='quay.io/noeloc/batterybase')
 
 autoEncodeData_op= components.create_component_from_func(
-    autoEncodeData, base_image='quay.io/noeloc/batterybase',
-    packages_to_install=['boto3'])
-
-
-def readFiles(infiles: InputPath())-> NamedTuple('taskOutput', [('p1', str)]):
-    import os  
-    import shutil
-    file_stats = os.stat(infiles)
-    print(file_stats)
-    print(f'File Size in Bytes is {file_stats.st_size}')
-    print(f'File Size in MegaBytes is {file_stats.st_size / (1024 * 1024)}')
-    from collections import namedtuple
-    task_output = namedtuple('taskOutput', ['p1'])
-    return task_output("1")
+    autoEncodeData, base_image='quay.io/noeloc/batterybase')
     
 readFiles_op= components.create_component_from_func(
-    readFiles, base_image='registry.access.redhat.com/ubi8/python-38')
-    
+    readFiles, base_image='quay.io/noeloc/batterybase')    
     
 @dsl.pipeline(
-  name='loadFilesTest',
+  name='batteryTestPipeline',
   description='Download files from minio and store'
 )
-def download_and_store():   
+def batteryTestPipeline():   
     vol = V1Volume(
         name='batterydatavol',
         persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
@@ -197,12 +257,19 @@ def download_and_store():
         )
     res = readyData_op().add_pvolumes({"/mnt": vol})
     prep = fitNormaliseData_op(res.output)
-    autoEncodeData_op(prep.output)
+    model = autoEncodeData_op(True,1,prep.output)
+    readFiles_op(model.outputs["weightsPath"],model.outputs["historyPath"])
+    
     
     # .add_pod_label('pipelines.kubeflow.org/cache_enabled', 'false')
     # readFiles_op(prep.output).add_pod_annotation(name="tekton.dev/output_artifacts", value=([])).add_pod_annotation(name="tekton.dev/artifact_items", value=([])).add_pod_label('pipelines.kubeflow.org/cache_enabled', 'false')
     
     # print('Pipeline Completed...',x.outputs['p1'])
+if __name__ == '__main__':
+    from kfp_tekton.compiler import TektonCompiler
+    compiler = TektonCompiler()
+    compiler.produce_taskspec = False
+    compiler.compile(batteryTestPipeline, __file__.replace('.py', '.yaml'))
     
 
 

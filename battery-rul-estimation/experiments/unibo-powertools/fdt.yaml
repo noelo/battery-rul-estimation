@@ -1,26 +1,32 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  name: loadfilestest
+  name: batterytestpipeline
   annotations:
-    tekton.dev/output_artifacts: '{"fitnormalisedata": [{"key": "artifacts/$PIPELINERUN/fitnormalisedata/modelData.tgz",
+    tekton.dev/output_artifacts: '{"autoencodedata": [{"key": "artifacts/$PIPELINERUN/autoencodedata/historyPath.tgz",
+      "name": "autoencodedata-historyPath", "path": "/tmp/outputs/historyPath/data"},
+      {"key": "artifacts/$PIPELINERUN/autoencodedata/weightsPath.tgz", "name": "autoencodedata-weightsPath",
+      "path": "/tmp/outputs/weightsPath/data"}], "fitnormalisedata": [{"key": "artifacts/$PIPELINERUN/fitnormalisedata/modelData.tgz",
       "name": "fitnormalisedata-modelData", "path": "/tmp/outputs/modelData/data"}],
       "readydata": [{"key": "artifacts/$PIPELINERUN/readydata/preppedData.tgz", "name":
       "readydata-preppedData", "path": "/tmp/outputs/preppedData/data"}]}'
     tekton.dev/input_artifacts: '{"autoencodedata": [{"name": "fitnormalisedata-modelData",
       "parent_task": "fitnormalisedata"}], "fitnormalisedata": [{"name": "readydata-preppedData",
-      "parent_task": "readydata"}]}'
+      "parent_task": "readydata"}], "readfiles": [{"name": "autoencodedata-historyPath",
+      "parent_task": "autoencodedata"}, {"name": "autoencodedata-weightsPath", "parent_task":
+      "autoencodedata"}]}'
     tekton.dev/artifact_bucket: mlpipeline
     tekton.dev/artifact_endpoint: minio-service.kubeflow:9000
     tekton.dev/artifact_endpoint_scheme: http://
-    tekton.dev/artifact_items: '{"autoencodedata": [], "fitnormalisedata": [["modelData",
-      "$(workspaces.fitnormalisedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/modelData"]],
-      "readydata": [["preppedData", "$(workspaces.readydata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/preppedData"]]}'
+    tekton.dev/artifact_items: '{"autoencodedata": [["historyPath", "$(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/historyPath"],
+      ["weightsPath", "$(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/weightsPath"]],
+      "fitnormalisedata": [["modelData", "$(workspaces.fitnormalisedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/modelData"]],
+      "readfiles": [], "readydata": [["preppedData", "$(workspaces.readydata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/preppedData"]]}'
     sidecar.istio.io/inject: "false"
     tekton.dev/template: ''
     pipelines.kubeflow.org/big_data_passing_format: $(workspaces.$TASK_NAME.path)/artifacts/$ORIG_PR_NAME/$TASKRUN_NAME/$TASK_PARAM_NAME
     pipelines.kubeflow.org/pipeline_spec: '{"description": "Download files from minio
-      and store", "name": "loadFilesTest"}'
+      and store", "name": "batteryTestPipeline"}'
   labels:
     pipelines.kubeflow.org/pipelinename: ''
     pipelines.kubeflow.org/generation: ''
@@ -55,9 +61,9 @@ spec:
             \n    reload(logging)\n    logging.basicConfig(format='%(asctime)s [%(levelname)s]:\
             \ %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\
             \n    from data_processing.unibo_powertools_data import UniboPowertoolsData,\
-            \ CycleCols\n    from data_processing.model_data_handler import ModelDataHandler\n\
-            \    from data_processing.prepare_rul_data import RulHandler\n\n    data_path\
-            \ = \"/mnt/\"    \n    sys.path.append(data_path)\n    print(sys.path)\n\
+            \ CycleCols\n    # from data_processing.model_data_handler import ModelDataHandler\n\
+            \    # from data_processing.prepare_rul_data import RulHandler\n\n   \
+            \ data_path = \"/mnt/\"    \n    sys.path.append(data_path)\n    print(sys.path)\n\
             \n    dataset = UniboPowertoolsData(\n        test_types=[],\n       \
             \ chunk_size=1000000,\n        lines=[37, 40],\n        charge_line=37,\n\
             \        discharge_line=40,\n        base_path=data_path\n    )\n\n  \
@@ -76,13 +82,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
-        - image: busybox
+        - image: quay.io/noeloc/busybox
           name: output-taskrun-name
           command:
           - sh
           - -ec
           - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
-        - image: busybox
+        - image: quay.io/noeloc/busybox
           name: copy-results-artifacts
           command:
           - sh
@@ -128,12 +134,12 @@ spec:
             pipelines.kubeflow.org/cache_enabled: "true"
           annotations:
             pipelines.kubeflow.org/component_spec_digest: '{"name": "ReadyData", "outputs":
-              [{"name": "preppedData"}], "version": "ReadyData@sha256=b291392d88e1c88099495a57b832ae397a2f08de7630234812fd3501db084e23"}'
+              [{"name": "preppedData"}], "version": "ReadyData@sha256=df3c3d32f7cfc945c80d497cd276505041bc542b0f164319b162369a6b1ba5ad"}'
         workspaces:
         - name: readydata
       workspaces:
       - name: readydata
-        workspace: loadfilestest
+        workspace: batterytestpipeline
     - name: fitnormalisedata
       params:
       - name: readydata-trname
@@ -148,11 +154,6 @@ spec:
           - $(workspaces.fitnormalisedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/modelData
           command:
           - sh
-          - -c
-          - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
-            'boto3' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
-            --no-warn-script-location 'boto3' --user) && "$0" "$@"
-          - sh
           - -ec
           - |
             program_path=$(mktemp)
@@ -161,8 +162,7 @@ spec:
           - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n\
             \    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return\
             \ file_path\n\ndef fitNormaliseData(preppedData,modelData):\n    import\
-            \ boto3\n    import os\n    import sys\n    import logging\n    import\
-            \ pickle\n    from importlib import reload\n    import shutil\n    reload(logging)\n\
+            \ logging\n    import pickle\n    from importlib import reload\n    reload(logging)\n\
             \    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',\
             \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    from data_processing.unibo_powertools_data\
             \ import UniboPowertoolsData, CycleCols\n    from data_processing.model_data_handler\
@@ -187,25 +187,21 @@ spec:
             \ capacity 1.36\n        '013-DM-3.0-4019-P',#minimum capacity 1.6\n \
             \       '006-EE-2.85-0820-S',# 2.621    \n        '044-EE-2.85-0820-H',#\
             \ 2.43\n        '039-DP-2.00-2420-S',#minimum capacity 1.93\n        '041-DM-4.00-2320-S',#minimum\
-            \ capacity 3.76, cycles 190\n    ]\n\n    # %%\n    dataset.prepare_data(train_names,\
+            \ capacity 3.76, cycles 190\n    ]\n\n    dataset.prepare_data(train_names,\
             \ test_names)\n    dataset_handler = ModelDataHandler(dataset, [\n   \
             \     CycleCols.VOLTAGE,\n        CycleCols.CURRENT,\n        CycleCols.TEMPERATURE\n\
-            \    ])\n\n    rul_handler = RulHandler()\n    # %%\n    (train_x, train_y_soh,\
+            \    ])\n\n    rul_handler = RulHandler()\n\n    (train_x, train_y_soh,\
             \ test_x, test_y_soh,\n    train_battery_range, test_battery_range,\n\
             \    time_train, time_test, current_train, current_test) = dataset_handler.get_discharge_whole_cycle_future(train_names,\
             \ test_names)\n\n    train_x = train_x[:,:284,:]\n    test_x = test_x[:,:284,:]\n\
-            \    print(\"cut train shape {}\".format(train_x.shape))\n    print(\"\
-            cut test shape {}\".format(test_x.shape))\n\n    x_norm = rul_handler.Normalization()\n\
-            \    train_x, test_x = x_norm.fit_and_normalize(train_x, test_x) \n\n\
-            \    print(\"cut train shape {}\".format(train_x.shape))\n    print(\"\
-            cut test shape {}\".format(test_x.shape))\n\n    dataStore = [train_x,\
-            \ train_y_soh, test_x, test_y_soh,train_battery_range, test_battery_range,time_train,\
-            \ time_test, current_train, current_test]  \n\n    with open(modelData,\
-            \ \"b+w\") as f:   \n        pickle.dump(dataStore,f)    \n    print('modelData\
-            \ written...')\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='FitNormaliseData',\
-            \ description='')\n_parser.add_argument(\"--preppedData\", dest=\"preppedData\"\
-            , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
-            --modelData\", dest=\"modelData\", type=_make_parent_dirs_and_return_path,\
+            \n    x_norm = rul_handler.Normalization()\n    train_x, test_x = x_norm.fit_and_normalize(train_x,\
+            \ test_x) \n\n    dataStore = [train_x, train_y_soh, test_x, test_y_soh,train_battery_range,\
+            \ test_battery_range,time_train, time_test, current_train, current_test]\
+            \  \n\n    with open(modelData, \"b+w\") as f:   \n        pickle.dump(dataStore,f)\
+            \    \n    print('modelData written...')\n\nimport argparse\n_parser =\
+            \ argparse.ArgumentParser(prog='FitNormaliseData', description='')\n_parser.add_argument(\"\
+            --preppedData\", dest=\"preppedData\", type=str, required=True, default=argparse.SUPPRESS)\n\
+            _parser.add_argument(\"--modelData\", dest=\"modelData\", type=_make_parent_dirs_and_return_path,\
             \ required=True, default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
             \n_outputs = fitNormaliseData(**_parsed_args)\n"
           image: quay.io/noeloc/batterybase
@@ -214,13 +210,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
-        - image: busybox
+        - image: quay.io/noeloc/busybox
           name: output-taskrun-name
           command:
           - sh
           - -ec
           - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
-        - image: busybox
+        - image: quay.io/noeloc/busybox
           name: copy-results-artifacts
           command:
           - sh
@@ -264,12 +260,12 @@ spec:
             pipelines.kubeflow.org/cache_enabled: "true"
           annotations:
             pipelines.kubeflow.org/component_spec_digest: '{"name": "FitNormaliseData",
-              "outputs": [{"name": "modelData"}], "version": "FitNormaliseData@sha256=da1b181eeccb5b2d55d5fd1955080ef88c677bf8b36a2dd03bcc5f38da9eb054"}'
+              "outputs": [{"name": "modelData"}], "version": "FitNormaliseData@sha256=3532a628e34747fdeb426db089b311d2b51f7779c57c5dfac812c8ff739c18a3"}'
         workspaces:
         - name: fitnormalisedata
       workspaces:
       - name: fitnormalisedata
-        workspace: loadfilestest
+        workspace: batterytestpipeline
       runAfter:
       - readydata
     - name: autoencodedata
@@ -280,39 +276,128 @@ spec:
         steps:
         - name: main
           args:
+          - --IS-TRAINING
+          - "True"
+          - --epochCount
+          - '1'
           - --modelData
           - $(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(params.fitnormalisedata-trname)/modelData
+          - --weightsPath
+          - $(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/weightsPath
+          - --historyPath
+          - $(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/historyPath
           command:
-          - sh
-          - -c
-          - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
-            'boto3' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
-            --no-warn-script-location 'boto3' --user) && "$0" "$@"
           - sh
           - -ec
           - |
             program_path=$(mktemp)
             printf "%s" "$0" > "$program_path"
             python3 -u "$program_path" "$@"
-          - "def autoEncodeData(modelData):\n    import tensorflow as tf\n    from\
-            \ tensorflow import keras\n    from tensorflow.keras import layers, regularizers\n\
-            \    from tensorflow.keras.models import Model\n    import logging\n \
-            \   import pickle\n    from importlib import reload\n    reload(logging)\n\
+          - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n\
+            \    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return\
+            \ file_path\n\ndef autoEncodeData(IS_TRAINING, epochCount, modelData,weightsPath,historyPath):\n\
+            \    import tensorflow as tf\n    # from tensorflow import keras\n   \
+            \ from tensorflow.keras import layers, regularizers\n    from tensorflow.keras.models\
+            \ import Model\n    import logging\n    import pickle\n    import time\n\
+            \    from importlib import reload\n    import pandas as pd\n\n    reload(logging)\n\
             \    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',\
-            \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    from data_processing.unibo_powertools_data\
-            \ import UniboPowertoolsData, CycleCols\n    from data_processing.model_data_handler\
-            \ import ModelDataHandler\n    from data_processing.prepare_rul_data import\
-            \ RulHandler\n\n    f = open(modelData,\"b+r\")\n    dataStore = pickle.load(f)\n\
-            \n    train_x=dataStore[0]\n    train_y_soh=dataStore[1]\n    test_x=dataStore[2]\n\
-            \    test_y_soh=dataStore[3]\n    train_battery_range=dataStore[4]\n \
-            \   test_battery_range=dataStore[5]\n    time_train=dataStore[6]\n   \
-            \ time_test=dataStore[7]\n    current_train=dataStore[8]\n    current_test=dataStore[9]\
-            \  \n\n    print(\"cut train shape {}\".format(train_x.shape))\n    print(\"\
-            cut test shape {}\".format(test_x.shape))\n\nimport argparse\n_parser\
-            \ = argparse.ArgumentParser(prog='AutoEncodeData', description='')\n_parser.add_argument(\"\
-            --modelData\", dest=\"modelData\", type=str, required=True, default=argparse.SUPPRESS)\n\
-            _parsed_args = vars(_parser.parse_args())\n\n_outputs = autoEncodeData(**_parsed_args)\n"
+            \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    # from\
+            \ data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols\n\
+            \    # from data_processing.model_data_handler import ModelDataHandler\n\
+            \    # from data_processing.prepare_rul_data import RulHandler\n\n   \
+            \ f = open(modelData,\"b+r\")\n    dataStore = pickle.load(f)\n\n    train_x=dataStore[0]\n\
+            \    train_y_soh=dataStore[1]\n    test_x=dataStore[2]\n    test_y_soh=dataStore[3]\n\
+            \    train_battery_range=dataStore[4]\n    test_battery_range=dataStore[5]\n\
+            \    time_train=dataStore[6]\n    time_test=dataStore[7]\n    current_train=dataStore[8]\n\
+            \    current_test=dataStore[9]  \n\n    if IS_TRAINING:\n        EXPERIMENT\
+            \ = \"autoencoder_unibo_powertools\"\n\n        experiment_name = time.strftime(\"\
+            %Y-%m-%d-%H-%M-%S\") + '_' + EXPERIMENT\n        print(experiment_name)\n\
+            \n    # Model definition\n\n    opt = tf.keras.optimizers.Adam(learning_rate=0.0002)\n\
+            \    LATENT_DIM = 10\n\n    class Autoencoder(Model):\n        def __init__(self,\
+            \ latent_dim):\n            super(Autoencoder, self).__init__()\n    \
+            \        self.latent_dim = latent_dim\n            self.encoder = tf.keras.Sequential([\n\
+            \                layers.Input(shape=(train_x.shape[1], train_x.shape[2])),\n\
+            \                #layers.MaxPooling1D(5, padding='same'),\n          \
+            \      layers.Conv1D(filters=16, kernel_size=5, strides=2, activation='relu',\
+            \ padding='same'),\n                layers.Conv1D(filters=8, kernel_size=3,\
+            \ strides=2, activation='relu', padding='same'),\n                layers.Flatten(),\n\
+            \                layers.Dense(self.latent_dim, activation='relu')\n  \
+            \          ])\n            self.decoder = tf.keras.Sequential([\n    \
+            \            layers.Input(shape=(self.latent_dim)),\n                layers.Dense(568,\
+            \ activation='relu'),\n                layers.Reshape((71, 8)),\n    \
+            \            layers.Conv1DTranspose(filters=8, kernel_size=3, strides=2,\
+            \ activation='relu', padding='same'),\n                layers.Conv1DTranspose(filters=16,\
+            \ kernel_size=5, strides=2, activation='relu', padding='same'),\n    \
+            \            layers.Conv1D(3, kernel_size=3, activation='relu', padding='same'),\n\
+            \                #layers.UpSampling1D(5),\n            ])\n\n        def\
+            \ call(self, x):\n            encoded = self.encoder(x)\n            decoded\
+            \ = self.decoder(encoded)\n            return decoded\n\n    autoencoder\
+            \ = Autoencoder(LATENT_DIM)\n    autoencoder.compile(optimizer=opt, loss='mse',\
+            \ metrics=['mse', 'mae', 'mape', tf.keras.metrics.RootMeanSquaredError(name='rmse')])\n\
+            \    autoencoder.encoder.summary()\n    autoencoder.decoder.summary()\n\
+            \n    if IS_TRAINING:\n        history = autoencoder.fit(train_x, train_x,\n\
+            \                                    epochs=epochCount, \n           \
+            \                         batch_size=32, \n                          \
+            \          verbose=1,\n                                    validation_split=0.1\n\
+            \                                )\n\n        print(\"history\",history)\n\
+            \        # autoencoder.save_weights(data_path + 'results/trained_model/%s/model'\
+            \ % experiment_name)\n        # autoencoder.save_weights(weightsPath+\"\
+            /model\")\n\n        hist_df = pd.DataFrame(history.history)\n       \
+            \ print(\"hist_df\",hist_df)\n        # hist_csv_file = data_path + 'results/trained_model/%s/history.csv'\
+            \ % experiment_name\n        with open(historyPath, mode='w') as f:\n\
+            \            hist_df.to_csv(f)\n        history = history.history\n  \
+            \      print(\"saving weights and history...done\",history)\n\ndef _deserialize_bool(s)\
+            \ -> bool:\n    from distutils.util import strtobool\n    return strtobool(s)\
+            \ == 1\n\nimport argparse\n_parser = argparse.ArgumentParser(prog='AutoEncodeData',\
+            \ description='')\n_parser.add_argument(\"--IS-TRAINING\", dest=\"IS_TRAINING\"\
+            , type=_deserialize_bool, required=True, default=argparse.SUPPRESS)\n\
+            _parser.add_argument(\"--epochCount\", dest=\"epochCount\", type=int,\
+            \ required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--modelData\"\
+            , dest=\"modelData\", type=str, required=True, default=argparse.SUPPRESS)\n\
+            _parser.add_argument(\"--weightsPath\", dest=\"weightsPath\", type=_make_parent_dirs_and_return_path,\
+            \ required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--historyPath\"\
+            , dest=\"historyPath\", type=_make_parent_dirs_and_return_path, required=True,\
+            \ default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
+            \n_outputs = autoEncodeData(**_parsed_args)\n"
           image: quay.io/noeloc/batterybase
+          env:
+          - name: ORIG_PR_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
+        - image: quay.io/noeloc/busybox
+          name: output-taskrun-name
+          command:
+          - sh
+          - -ec
+          - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
+        - image: quay.io/noeloc/busybox
+          name: copy-results-artifacts
+          command:
+          - sh
+          - -ec
+          - |
+            set -exo pipefail
+            TOTAL_SIZE=0
+            copy_artifact() {
+            if [ -d "$1" ]; then
+              tar -czvf "$1".tar.gz "$1"
+              SUFFIX=".tar.gz"
+            fi
+            ARTIFACT_SIZE=`wc -c "$1"${SUFFIX} | awk '{print $1}'`
+            TOTAL_SIZE=$( expr $TOTAL_SIZE + $ARTIFACT_SIZE)
+            touch "$2"
+            if [[ $TOTAL_SIZE -lt 3072 ]]; then
+              if [ -d "$1" ]; then
+                tar -tzf "$1".tar.gz > "$2"
+              elif ! awk "/[^[:print:]]/{f=1} END{exit !f}" "$1"; then
+                cp "$1" "$2"
+              fi
+            fi
+            }
+            copy_artifact $(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/weightsPath $(results.weightsPath.path)
+            copy_artifact $(workspaces.autoencodedata.path)/artifacts/$ORIG_PR_NAME/$(context.taskRun.name)/historyPath $(results.historyPath.path)
+          onError: continue
           env:
           - name: ORIG_PR_NAME
             valueFrom:
@@ -320,23 +405,83 @@ spec:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
         params:
         - name: fitnormalisedata-trname
+        results:
+        - name: historyPath
+          type: string
+          description: /tmp/outputs/historyPath/data
+        - name: taskrun-name
+          type: string
+        - name: weightsPath
+          type: string
+          description: /tmp/outputs/weightsPath/data
         metadata:
           labels:
             pipelines.kubeflow.org/cache_enabled: "true"
           annotations:
             pipelines.kubeflow.org/component_spec_digest: '{"name": "AutoEncodeData",
-              "outputs": [], "version": "AutoEncodeData@sha256=449163b4f02f828427e2202b5a363dbf59b5e4f828ced5998359e48c1b78dc72"}'
+              "outputs": [{"name": "weightsPath"}, {"name": "historyPath"}], "version":
+              "AutoEncodeData@sha256=e0ff7f0e9468a700339b45655d9dc74bd958bd9e7dab5d730c628b5c36cd4c3f"}'
         workspaces:
         - name: autoencodedata
       workspaces:
       - name: autoencodedata
-        workspace: loadfilestest
+        workspace: batterytestpipeline
       runAfter:
       - fitnormalisedata
+    - name: readfiles
+      params:
+      - name: autoencodedata-trname
+        value: $(tasks.autoencodedata.results.taskrun-name)
+      taskSpec:
+        steps:
+        - name: main
+          args:
+          - --weights
+          - $(workspaces.readfiles.path)/artifacts/$ORIG_PR_NAME/$(params.autoencodedata-trname)/weightsPath
+          - --history
+          - $(workspaces.readfiles.path)/artifacts/$ORIG_PR_NAME/$(params.autoencodedata-trname)/historyPath
+          command:
+          - sh
+          - -ec
+          - |
+            program_path=$(mktemp)
+            printf "%s" "$0" > "$program_path"
+            python3 -u "$program_path" "$@"
+          - "def readFiles(weights,history):\n    import os  \n    for x in [weights,history]:\n\
+            \        file_stats = os.stat(x)\n        print(file_stats)\n        print(f'File\
+            \ Size in Bytes is {file_stats.st_size}')\n        print(f'File Size in\
+            \ MegaBytes is {file_stats.st_size / (1024 * 1024)}')\n\nimport argparse\n\
+            _parser = argparse.ArgumentParser(prog='ReadFiles', description='')\n\
+            _parser.add_argument(\"--weights\", dest=\"weights\", type=str, required=True,\
+            \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--history\", dest=\"\
+            history\", type=str, required=True, default=argparse.SUPPRESS)\n_parsed_args\
+            \ = vars(_parser.parse_args())\n\n_outputs = readFiles(**_parsed_args)\n"
+          image: quay.io/noeloc/batterybase
+          env:
+          - name: ORIG_PR_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
+        params:
+        - name: autoencodedata-trname
+        metadata:
+          labels:
+            pipelines.kubeflow.org/cache_enabled: "true"
+          annotations:
+            pipelines.kubeflow.org/component_spec_digest: '{"name": "ReadFiles", "outputs":
+              [], "version": "ReadFiles@sha256=c6bf23509e7e6628766a3953fd6f7451ba6eabade6a91e4456c0d8ffac1d4a27"}'
+        workspaces:
+        - name: readfiles
+      workspaces:
+      - name: readfiles
+        workspace: batterytestpipeline
+      runAfter:
+      - autoencodedata
+      - autoencodedata
     workspaces:
-    - name: loadfilestest
+    - name: batterytestpipeline
   workspaces:
-  - name: loadfilestest
+  - name: batterytestpipeline
     volumeClaimTemplate:
       spec:
         storageClassName: odf-lvm-vg1
