@@ -26,12 +26,21 @@ metadata:
     tekton.dev/template: ''
     pipelines.kubeflow.org/big_data_passing_format: $(workspaces.$TASK_NAME.path)/artifacts/$ORIG_PR_NAME/$TASKRUN_NAME/$TASK_PARAM_NAME
     pipelines.kubeflow.org/pipeline_spec: '{"description": "Download files from minio
-      and store", "name": "batteryTestPipeline"}'
+      and store", "inputs": [{"name": "file_obj", "type": "String"}, {"name": "src_bucket",
+      "type": "String"}], "name": "batteryTestPipeline"}'
   labels:
     pipelines.kubeflow.org/pipelinename: ''
     pipelines.kubeflow.org/generation: ''
 spec:
+  params:
+  - name: file_obj
+    value: ''
+  - name: src_bucket
+    value: ''
   pipelineSpec:
+    params:
+    - name: file_obj
+    - name: src_bucket
     tasks:
     - name: readydata
       taskSpec:
@@ -82,13 +91,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: output-taskrun-name
           command:
           - sh
           - -ec
           - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: copy-results-artifacts
           command:
           - sh
@@ -210,13 +219,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: output-taskrun-name
           command:
           - sh
           - -ec
           - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: copy-results-artifacts
           command:
           - sh
@@ -296,27 +305,27 @@ spec:
           - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n\
             \    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return\
             \ file_path\n\ndef autoEncodeData(IS_TRAINING, epochCount, modelData,weightsPath,historyPath):\n\
-            \    import tensorflow as tf\n    # from tensorflow import keras\n   \
-            \ from tensorflow.keras import layers, regularizers\n    from tensorflow.keras.models\
-            \ import Model\n    import logging\n    import pickle\n    import time\n\
-            \    from importlib import reload\n    import pandas as pd\n\n    reload(logging)\n\
-            \    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s',\
-            \ level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    \n\n    # from\
-            \ data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols\n\
-            \    # from data_processing.model_data_handler import ModelDataHandler\n\
-            \    # from data_processing.prepare_rul_data import RulHandler\n\n   \
-            \ f = open(modelData,\"b+r\")\n    dataStore = pickle.load(f)\n\n    train_x=dataStore[0]\n\
-            \    train_y_soh=dataStore[1]\n    test_x=dataStore[2]\n    test_y_soh=dataStore[3]\n\
-            \    train_battery_range=dataStore[4]\n    test_battery_range=dataStore[5]\n\
-            \    time_train=dataStore[6]\n    time_test=dataStore[7]\n    current_train=dataStore[8]\n\
-            \    current_test=dataStore[9]  \n\n    if IS_TRAINING:\n        EXPERIMENT\
-            \ = \"autoencoder_unibo_powertools\"\n\n        experiment_name = time.strftime(\"\
-            %Y-%m-%d-%H-%M-%S\") + '_' + EXPERIMENT\n        print(experiment_name)\n\
-            \n    # Model definition\n\n    opt = tf.keras.optimizers.Adam(learning_rate=0.0002)\n\
-            \    LATENT_DIM = 10\n\n    class Autoencoder(Model):\n        def __init__(self,\
-            \ latent_dim):\n            super(Autoencoder, self).__init__()\n    \
-            \        self.latent_dim = latent_dim\n            self.encoder = tf.keras.Sequential([\n\
-            \                layers.Input(shape=(train_x.shape[1], train_x.shape[2])),\n\
+            \    import tensorflow as tf\n    from tensorflow import keras\n    from\
+            \ keras import layers, regularizers\n    from keras.models import Model\n\
+            \    import logging\n    import pickle\n    import time\n    from importlib\
+            \ import reload\n    import pandas as pd\n\n    reload(logging)\n    logging.basicConfig(format='%(asctime)s\
+            \ [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d\
+            \ %H:%M:%S')    \n\n    # from data_processing.unibo_powertools_data import\
+            \ UniboPowertoolsData, CycleCols\n    # from data_processing.model_data_handler\
+            \ import ModelDataHandler\n    # from data_processing.prepare_rul_data\
+            \ import RulHandler\n\n    f = open(modelData,\"b+r\")\n    dataStore\
+            \ = pickle.load(f)\n\n    train_x=dataStore[0]\n    train_y_soh=dataStore[1]\n\
+            \    test_x=dataStore[2]\n    test_y_soh=dataStore[3]\n    train_battery_range=dataStore[4]\n\
+            \    test_battery_range=dataStore[5]\n    time_train=dataStore[6]\n  \
+            \  time_test=dataStore[7]\n    current_train=dataStore[8]\n    current_test=dataStore[9]\
+            \  \n\n    if IS_TRAINING:\n        EXPERIMENT = \"autoencoder_unibo_powertools\"\
+            \n\n        experiment_name = time.strftime(\"%Y-%m-%d-%H-%M-%S\") + '_'\
+            \ + EXPERIMENT\n        print(experiment_name)\n\n    # Model definition\n\
+            \n    opt = tf.keras.optimizers.Adam(learning_rate=0.0002)\n    LATENT_DIM\
+            \ = 10\n\n    class Autoencoder(Model):\n        def __init__(self, latent_dim):\n\
+            \            super(Autoencoder, self).__init__()\n            self.latent_dim\
+            \ = latent_dim\n            self.encoder = tf.keras.Sequential([\n   \
+            \             layers.Input(shape=(train_x.shape[1], train_x.shape[2])),\n\
             \                #layers.MaxPooling1D(5, padding='same'),\n          \
             \      layers.Conv1D(filters=16, kernel_size=5, strides=2, activation='relu',\
             \ padding='same'),\n                layers.Conv1D(filters=8, kernel_size=3,\
@@ -340,11 +349,14 @@ spec:
             \                         batch_size=32, \n                          \
             \          verbose=1,\n                                    validation_split=0.1\n\
             \                                )\n\n        print(\"history\",history)\n\
-            \        # autoencoder.save_weights(data_path + 'results/trained_model/%s/model'\
-            \ % experiment_name)\n        # autoencoder.save_weights(weightsPath+\"\
+            \        model_json = autoencoder.to_json()\n        with open(\"weightsPath\"\
+            , \"w\") as json_file:\n            json_file.write(model_json)\n\n  \
+            \      # serialize weights to HDF5\n        # model.save_weights(\"model.h5\"\
+            )\n        print(\"Saved model to disk\")\n        # autoencoder.save_weights(data_path\
+            \ + 'results/trained_model/%s/model' % experiment_name)\n        autoencoder.save_weights(weightsPath+\"\
             /model\")\n\n        hist_df = pd.DataFrame(history.history)\n       \
             \ print(\"hist_df\",hist_df)\n        # hist_csv_file = data_path + 'results/trained_model/%s/history.csv'\
-            \ % experiment_name\n        with open(historyPath, mode='w') as f:\n\
+            \ % experiment_name\n        with open(historyPath, mode='b+w') as f:\n\
             \            hist_df.to_csv(f)\n        history = history.history\n  \
             \      print(\"saving weights and history...done\",history)\n\ndef _deserialize_bool(s)\
             \ -> bool:\n    from distutils.util import strtobool\n    return strtobool(s)\
@@ -365,13 +377,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.labels['custom.tekton.dev/originalPipelineRun']
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: output-taskrun-name
           command:
           - sh
           - -ec
           - echo -n "$(context.taskRun.name)" > "$(results.taskrun-name.path)"
-        - image: quay.io/noeloc/busybox
+        - image: busybox
           name: copy-results-artifacts
           command:
           - sh
@@ -420,7 +432,7 @@ spec:
           annotations:
             pipelines.kubeflow.org/component_spec_digest: '{"name": "AutoEncodeData",
               "outputs": [{"name": "weightsPath"}, {"name": "historyPath"}], "version":
-              "AutoEncodeData@sha256=e0ff7f0e9468a700339b45655d9dc74bd958bd9e7dab5d730c628b5c36cd4c3f"}'
+              "AutoEncodeData@sha256=2fffeec4cd1f3fdb5a3d3186a9bfa4ee439f573aa141fffbea133bbf44d330ca"}'
         workspaces:
         - name: autoencodedata
       workspaces:
@@ -484,9 +496,9 @@ spec:
   - name: batterytestpipeline
     volumeClaimTemplate:
       spec:
-        storageClassName: odf-lvm-vg1
+        storageClassName: kfp-csi-s3
         accessModes:
-        - ReadWriteOnce
+        - ReadWriteMany
         resources:
           requests:
-            storage: 5Gi
+            storage: 2Gi

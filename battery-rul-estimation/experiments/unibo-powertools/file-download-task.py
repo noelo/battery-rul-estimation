@@ -1,35 +1,24 @@
+import os
 from kfp import dsl, components
-from kfp.dsl import data_passing_methods
-from kfp.components import InputPath, OutputPath, OutputArtifact
-from kfp.components import func_to_container_op
-from kubernetes.client import V1Volume, V1SecretVolumeSource, V1VolumeMount, V1EnvVar, V1PersistentVolumeClaimVolumeSource
-from typing import NamedTuple
+from kfp.components import InputPath, OutputPath
+from kubernetes.client import V1Volume, V1EnvVar, V1PersistentVolumeClaimVolumeSource
+from kfp_tekton.k8s_client_helper import env_from_secret
 
 # Download files to workspace
-def readyData(preppedData: OutputPath()):
-    import boto3
-    import os
+def ready_data(data_path:str,prepped_data: OutputPath()):
+    '''prepare model data'''
     import sys
     import logging
     import pickle
     from importlib import reload
-    import shutil
-    
-# export DEFAULT_ACCESSMODES=ReadWriteOnce
-# export DEFAULT_STORAGE_SIZE=5Gi
-# export DEFAULT_STORAGE_CLASS=odf-lvm-vg1
-    
-    reload(logging)
-    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
-
     from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
-    # from data_processing.model_data_handler import ModelDataHandler
-    # from data_processing.prepare_rul_data import RulHandler
-    
-    data_path = "/mnt/"    
+
+    reload(logging)
+    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')
+
     sys.path.append(data_path)
     print(sys.path)
-    
+
     dataset = UniboPowertoolsData(
         test_types=[],
         chunk_size=1000000,
@@ -38,23 +27,23 @@ def readyData(preppedData: OutputPath()):
         discharge_line=40,
         base_path=data_path
     )
-    
-    with open(preppedData, "b+w") as f:   
-        pickle.dump(dataset,f)    
+
+    with open(prepped_data, "b+w") as f:
+        pickle.dump(dataset,f)
     print('PrepData written...')
-    
-def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
+
+def fit_normalise_data(prepped_data: InputPath(),model_data:OutputPath()):
+    '''normalise data'''
     import logging
     import pickle
     from importlib import reload
-    reload(logging)
-    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
-
     from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
     from data_processing.model_data_handler import ModelDataHandler
     from data_processing.prepare_rul_data import RulHandler
     
-    f = open(preppedData,"b+r")
+    reload(logging)
+    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
+    f = open(prepped_data,"b+r")
     dataset = pickle.load(f)
         
     train_names = [
@@ -112,14 +101,13 @@ def fitNormaliseData(preppedData: InputPath(),modelData:OutputPath()):
 
     x_norm = rul_handler.Normalization()
     train_x, test_x = x_norm.fit_and_normalize(train_x, test_x) 
-    
-    dataStore = [train_x, train_y_soh, test_x, test_y_soh,train_battery_range, test_battery_range,time_train, time_test, current_train, current_test]  
-    
-    with open(modelData, "b+w") as f:   
-        pickle.dump(dataStore,f)    
+    data_store = [train_x, train_y_soh, test_x, test_y_soh,train_battery_range, test_battery_range,time_train, time_test, current_train, current_test]
+    with open(model_data, "b+w") as f:
+        pickle.dump(data_store,f)
     print('modelData written...')
     
-def autoEncodeData(IS_TRAINING:bool, epochCount:int, modelData: InputPath(),weightsPath:OutputPath(),historyPath:OutputPath()):
+def auto_encode_data(is_training:bool, epoch_count:int, model_data: InputPath(),weightspath:OutputPath(),historypath:OutputPath()):
+    '''train or inference model'''
     import tensorflow as tf
     from tensorflow import keras
     from keras import layers, regularizers
@@ -129,29 +117,24 @@ def autoEncodeData(IS_TRAINING:bool, epochCount:int, modelData: InputPath(),weig
     import time
     from importlib import reload
     import pandas as pd
-    
-    reload(logging)
-    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')    
 
-    # from data_processing.unibo_powertools_data import UniboPowertoolsData, CycleCols
-    # from data_processing.model_data_handler import ModelDataHandler
-    # from data_processing.prepare_rul_data import RulHandler
-    
-    f = open(modelData,"b+r")
-    dataStore = pickle.load(f)
-    
-    train_x=dataStore[0]
-    train_y_soh=dataStore[1]
-    test_x=dataStore[2]
-    test_y_soh=dataStore[3]
-    train_battery_range=dataStore[4]
-    test_battery_range=dataStore[5]
-    time_train=dataStore[6]
-    time_test=dataStore[7]
-    current_train=dataStore[8]
-    current_test=dataStore[9]  
-    
-    if IS_TRAINING:
+    reload(logging)
+    logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG, datefmt='%Y/%m/%d %H:%M:%S')
+    f = open(model_data,"b+r")
+    data_store = pickle.load(f)
+
+    train_x=data_store[0]
+    train_y_soh=data_store[1]
+    test_x=data_store[2]
+    test_y_soh=data_store[3]
+    train_battery_range=data_store[4]
+    test_battery_range=data_store[5]
+    time_train=data_store[6]
+    time_test=data_store[7]
+    current_train=data_store[8]
+    current_test=data_store[9]  
+
+    if is_training:
         EXPERIMENT = "autoencoder_unibo_powertools"
 
         experiment_name = time.strftime("%Y-%m-%d-%H-%M-%S") + '_' + EXPERIMENT
@@ -194,10 +177,10 @@ def autoEncodeData(IS_TRAINING:bool, epochCount:int, modelData: InputPath(),weig
     autoencoder.encoder.summary()
     autoencoder.decoder.summary()
 
-    if IS_TRAINING:
+    if is_training:
         history = autoencoder.fit(train_x, train_x,
-                                    epochs=epochCount, 
-                                    batch_size=32, 
+                                    epochs=epoch_count,
+                                    batch_size=32,
                                     verbose=1,
                                     validation_split=0.1
                                 )
@@ -206,71 +189,100 @@ def autoEncodeData(IS_TRAINING:bool, epochCount:int, modelData: InputPath(),weig
         model_json = autoencoder.to_json()
         with open("weightsPath", "w") as json_file:
             json_file.write(model_json)
-            
         # serialize weights to HDF5
         # model.save_weights("model.h5")
         print("Saved model to disk")
         # autoencoder.save_weights(data_path + 'results/trained_model/%s/model' % experiment_name)
-        autoencoder.save_weights(weightsPath+"/model")
+        autoencoder.save_weights(weightspath+"/model")
 
         hist_df = pd.DataFrame(history.history)
         print("hist_df",hist_df)
         # hist_csv_file = data_path + 'results/trained_model/%s/history.csv' % experiment_name
-        with open(historyPath, mode='b+w') as f:
+        with open(historypath, mode='b+w') as f:
             hist_df.to_csv(f)
         history = history.history
         print("saving weights and history...done",history)
-        
-        
-def readFiles(weights: InputPath(),history:InputPath()):
+
+def load_trigger_data(data_file:str,bucket_details:str,file_destination:str):
+    '''load data file passed from cloud event into relevant location'''
+    import boto3
+    import os
+
+    endpoint_url=os.environ["s3_host"]
+    aws_access_key_id=os.environ["s3_access_key"]
+    aws_secret_access_key=os.environ["s3_secret_access_key"]
+    print(endpoint_url,aws_access_key_id, aws_secret_access_key)
+
+    s3_target = boto3.resource('s3',
+        endpoint_url=endpoint_url,
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        aws_session_token=None,
+        config=boto3.session.Config(signature_version='s3v4'),
+        verify=False
+    )
+
+    with open(file_destination+data_file, 'wb') as f:
+        s3_target.meta.client.download_fileobj(bucket_details, data_file, f)
+
+def read_files(weights_path: InputPath(),history_path:InputPath()):
+    '''print file info for debugging'''
     import os  
-    for x in [weights,history]:
+    for x in [weights_path,history_path]:
         file_stats = os.stat(x)
         print(file_stats)
         print(f'File Size in Bytes is {file_stats.st_size}')
         print(f'File Size in MegaBytes is {file_stats.st_size / (1024 * 1024)}')
 
-    
-    
-readyData_op= components.create_component_from_func(
-    readyData, base_image='quay.io/noeloc/batterybase',
+ready_data_op= components.create_component_from_func(
+    ready_data, base_image='quay.io/noeloc/batterybase',
     packages_to_install=['boto3'])
 
-fitNormaliseData_op= components.create_component_from_func(
-    fitNormaliseData, base_image='quay.io/noeloc/batterybase')
+fit_normalise_data_op= components.create_component_from_func(
+    fit_normalise_data, base_image='quay.io/noeloc/batterybase')
 
-autoEncodeData_op= components.create_component_from_func(
-    autoEncodeData, base_image='quay.io/noeloc/batterybase')
-    
-readFiles_op= components.create_component_from_func(
-    readFiles, base_image='quay.io/noeloc/batterybase')    
-    
+auto_encode_data_op= components.create_component_from_func(
+    auto_encode_data, base_image='quay.io/noeloc/batterybase')
+
+read_files_op= components.create_component_from_func(
+    read_files, base_image='quay.io/noeloc/batterybase')
+
+load_trigger_data_op= components.create_component_from_func(
+    load_trigger_data, base_image='quay.io/noeloc/batterybase',
+    packages_to_install=['boto3'])
+
 @dsl.pipeline(
-  name='batteryTestPipeline',
-  description='Download files from minio and store'
+  name='batterytest-pipeline',
+  description='Download files from s3, train, inference'
 )
-def batteryTestPipeline():   
+def batterytest_pipeline(file_obj:str, src_bucket:str):
+    '''Download files from s3, train, inference'''
+    print("Params",file_obj, src_bucket)
     vol = V1Volume(
         name='batterydatavol',
         persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
             claim_name='batterydata',)
         )
-    res = readyData_op().add_pvolumes({"/mnt": vol})
-    prep = fitNormaliseData_op(res.output)
-    model = autoEncodeData_op(True,1,prep.output)
-    readFiles_op(model.outputs["weightsPath"],model.outputs["historyPath"])
-    
-    
-    # .add_pod_label('pipelines.kubeflow.org/cache_enabled', 'false')
-    # readFiles_op(prep.output).add_pod_annotation(name="tekton.dev/output_artifacts", value=([])).add_pod_annotation(name="tekton.dev/artifact_items", value=([])).add_pod_label('pipelines.kubeflow.org/cache_enabled', 'false')
-    
-    # print('Pipeline Completed...',x.outputs['p1'])
+    ## /mnt/data/unibo-powertools-dataset/unibo-powertools-dataset
+    file_destination = "/mnt/data/unibo-powertools-dataset/unibo-powertools-dataset/"
+    trigger_data = load_trigger_data_op(file_obj, src_bucket,file_destination).add_pvolumes({"/mnt": vol})
+    trigger_data.add_env_variable(V1EnvVar(name='s3_host', value='http://rook-ceph-rgw-ceph-object-store.openshift-storage.svc:8080'))
+    trigger_data.add_env_variable(env_from_secret('s3_access_key', 's3-secret', 'AWS_ACCESS_KEY_ID'))
+    trigger_data.add_env_variable(env_from_secret('s3_secret_access_key', 's3-secret', 'AWS_SECRET_ACCESS_KEY'))
+
+    res = ready_data_op("/mnt/").after(trigger_data).add_pvolumes({"/mnt": vol})
+
+    prep = fit_normalise_data_op(res.output)
+
+    model = auto_encode_data_op(True,1,prep.output)
+
+    read_files_op(model.outputs["weightspath"],model.outputs["historypath"])
+
 if __name__ == '__main__':
     from kfp_tekton.compiler import TektonCompiler
+    os.environ.setdefault("DEFAULT_STORAGE_CLASS","managed-csi")
+    os.environ.setdefault("DEFAULT_ACCESSMODES","ReadWriteOnce")
+    os.environ.setdefault("DEFAULT_STORAGE_SIZE","10Gi")
     compiler = TektonCompiler()
     compiler.produce_taskspec = False
-    compiler.compile(batteryTestPipeline, __file__.replace('.py', '.yaml'))
-    
-
-
-    
+    compiler.compile(batterytest_pipeline, __file__.replace('.py', '.yaml'))
