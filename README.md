@@ -1,5 +1,13 @@
 # Battery-state-estimation
 
+## To build base image for pipeline
+```
+podman build -t batterybase .
+podman tag localhost/batterybase quay.io/noeloc/batterybase
+podman push quay.io/noeloc/batterybase
+```
+
+
 Estimation of the Remaining Useful Life (RUL) of Lithium-ion batteries using Deep LSTMs.
 
 ## Introduction
